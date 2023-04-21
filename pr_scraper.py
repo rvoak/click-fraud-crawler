@@ -1,21 +1,31 @@
-
+import requests as req2
 from playwright.sync_api import Playwright, sync_playwright
 from urllib.parse import urlparse
 import os
+import json
+
+# Helper function to parse the request and click file
+def parseReqFile(file):
+    with open(file,'r') as rFile:
+        lines = rFile.readlines()
+    k = [json.loads(line) for line in lines]
+    return k
 
 def main(playwright: Playwright) -> None:
-
 
     ext_file = "extension"
     extension_dir = "/Users/rajvardhan/Documents/GitHub/WebCheck/"
     log = True
 
-    #URL = "https://www.google.com"
+    # Change the URL here
     URL = "https://hindilinks4u.kim/ant-man-and-the-wasp-quantumania-2023-hindi-dubbed-Watch-online/"
+
+    # Create storage directories
     domain = urlparse(URL).netloc
     directory = "crawl/{}".format(domain)
     if not os.path.exists(directory):
         os.mkdir(directory)
+        os.mkdir("{}/scripts".format(directory))
 
     # Set up the browser context
     context = playwright.chromium.launch_persistent_context(
@@ -29,9 +39,6 @@ def main(playwright: Playwright) -> None:
             "--load-extension={}".format(ext_file),
              ],
     )
-
-
-
 
     # Navigate to the webpage
     page = context.new_page()
@@ -48,12 +55,6 @@ def main(playwright: Playwright) -> None:
     # Calculate the width and height of each cell in the grid
     cell_width = grid_width // num_cols
     cell_height = grid_height // num_rows
-
-    # WAIT BEFORE CLICKING!
-    # hasUserGesture?
-
-    # Download JS files
-
 
     # Loop through each cell in the grid
     for row in range(num_rows):
@@ -83,21 +84,42 @@ def main(playwright: Playwright) -> None:
         clicks = clickFile.read()
     open('server/output/click.json', 'w').close()
 
+    # Save it for persistent storage
+    with open("{}/clicks.json".format(directory), "w+") as clickFile:
+        clickFile.write(clicks)
+
+    # Do the same with requests
+    requests_json = parseReqFile("server/output/request.json".format(directory))
     with open('server/output/request.json', 'r') as requestFile:
         requests = requestFile.read()
     open('server/output/request.json', 'w').close()
 
-    # Save the click data in a new directory
-
-
-    # Clicks
-    with open("{}/clicks.json".format(directory), "w+") as clickFile:
-        clickFile.write(clicks)
-
-    # Requests
+    # Also save to directory!
     with open("{}/requests.json".format(directory), "w+") as requestFile:
         requestFile.write(requests)
 
+    # Collect the Script URLs
+    scripts = []
+    for id_req, req in enumerate(requests_json):
+        stack = req['call_stack']
+        if 'stack' in stack.keys():
+            stack = stack['stack']
+            if 'callFrames' in stack:
+                for cf in stack['callFrames']:
+                    scripts.append(cf['url'])
 
+    # For each 3P script, request the JS and save it
+    for script in list(set(scripts)):
+        if 'chrome-extension' not in script:
+            code_ = req2.get(script)
+            code = code_.content
+            script_name = script.replace('/','_')
+            if '.js' not in script_name:
+                script_name = script_name + '.js'
+            with open("{}/scripts/{}".format(directory, script_name), 'w+') as script_file:
+                script_file.write(str(code))
+
+
+# Execute
 with sync_playwright() as playwright:
     main(playwright)
