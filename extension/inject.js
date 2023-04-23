@@ -9,7 +9,7 @@ document.addEventListener('click', function(event) {
                     "CoordinateY": event.clientY,
                     "event": "click",
                     "timestamp": new Date().getTime(),
-                    "target": event.target,
+                    "target": document.elementFromPoint(event.clientX, event.clientY),
                     "stack": new Error().stack
                 }),
                 mode: 'cors',
