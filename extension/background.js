@@ -10,6 +10,7 @@ chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
           fetch(`http://localhost:${port}/request`, {
                   method: "POST",
                   body: JSON.stringify({
+                    "message": message,
                     "http_req": params.request.url,
                     "request_id": params.requestId,
                     "frame_url": params.documentURL,
@@ -26,6 +27,9 @@ chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
                       "Content-Type": "application/json"
                   }
       });
+        }
+        if (message == 'Page.windowOpen') {
+          console.log('JSLOG: window.open() fired');
         }
       });
     });
