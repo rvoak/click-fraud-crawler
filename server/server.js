@@ -21,7 +21,7 @@ app.use(bodyParser.json());
 fs.mkdir('output', (err) => {
   if (err) {
     console.error(err);
-  } 
+  }
 });
 
 async function insertRequest(newHttpReq) {
@@ -35,6 +35,24 @@ async function insertRequest(newHttpReq) {
 
 async function insertClicked(newHttpReq) {
     const file = 'output/click.json';
+    jsonfile.writeFile(file, newHttpReq, {
+        flag: 'a'
+    }, function(err) {
+        if (err) console.error(err);
+    })
+}
+
+async function insertPageWindowOpen(newHttpReq) {
+    const file = 'output/PageEvents.json';
+    jsonfile.writeFile(file, newHttpReq, {
+        flag: 'a'
+    }, function(err) {
+        if (err) console.error(err);
+    })
+}
+
+async function insertDOMEvents(newHttpReq) {
+    const file = 'output/DOMEvents.json';
     jsonfile.writeFile(file, newHttpReq, {
         flag: 'a'
     }, function(err) {
@@ -56,6 +74,16 @@ app.post('/clicked', (req, res) => {
     clickTrigger[0] = req.body.timestamp;
     insertClicked(req.body);
     res.send("clicked-success");
+})
+
+app.post('/pagewindowopen', (req, res) => {
+    insertPageWindowOpen(req.body);
+    res.send("windowopen-success");
+})
+
+app.post('/domevents', (req, res) => {
+    insertDOMEvents(req.body);
+    res.send("windowopen-success");
 })
 
 app.listen(port, () => {
