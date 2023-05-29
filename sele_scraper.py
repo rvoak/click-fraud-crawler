@@ -10,9 +10,17 @@ import pandas as pd
 import requests
 import os
 from urllib.parse import urlparse
-import pyautogui
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+
+# Helper function to parse the request and click file
+def parseReqFile(file):
+    with open(file,'r') as rFile:
+        lines = rFile.readlines()
+    k = [json.loads(line) for line in lines]
+    return k
+
 
 # selenium to visit website and get logs
 def visitWebsite(URL):
@@ -20,6 +28,7 @@ def visitWebsite(URL):
     ext_file = "extension"
     domain = urlparse(URL).netloc
     directory = "crawl/v3/{}".format(domain)
+    do_JS = True
     if not os.path.exists(directory):
         os.mkdir(directory)
         os.mkdir("{}/scripts".format(directory))
@@ -43,11 +52,10 @@ def visitWebsite(URL):
 
     # Clicking
     reference_element = driver.find_element(By.TAG_NAME, "body")
-    #window_size = driver.get_window_size()
-    #window_width = window_size['width']
-    #window_height = window_size['height']
-    window_width = reference_element.size['width']
-    window_height = reference_element.size['height']
+    window_size = driver.get_window_size()
+    window_width = window_size['width']
+    window_height = window_size['height']
+
     print("Height = {}".format(window_height))
     print("Width = {}".format(window_width))
 
@@ -67,7 +75,6 @@ def visitWebsite(URL):
     print("{} Text Boxes found".format(len(text_boxes)))
 
     print("Clicking body")
-    #reference_element.click()
     driver.execute_script('arguments[0].click()', reference_element)
 
 
@@ -106,8 +113,6 @@ def visitWebsite(URL):
             print("Clicked: {}, {}".format(x, y))
 
     '''
-
-            # log
 
 
     # Read the clicks file and clear it
