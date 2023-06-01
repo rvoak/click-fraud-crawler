@@ -58,7 +58,7 @@ def intercept_window_open(page):
     }''')
 
 def console_msg(msg):
-    if "addEventListener" in msg.text or "window.open" in msg.text:
+    if "addEventListener" in msg.text or "Page.windowOpen" in msg.text:
         print("CONSOLE: {}".format(msg.text))
 
 def handle_new_tab(new_page):
@@ -126,12 +126,12 @@ def main(playwright: Playwright, idURL, URL) -> None:
 
     # Set up the browser context
     context = playwright.chromium.launch_persistent_context(
-        headless=False,
+        headless=True,
         user_data_dir = context_dir,
         devtools = True,
         record_har_path = "{}/pw_harfile.har".format(directory),
         args=[
-                #"--headless=new",
+                "--headless=new",
                 "--disable-extensions-except={}".format(ext_file),
                 "--load-extension={}".format(ext_file),
                 "--ignore-ssl-errors=yes",
@@ -167,8 +167,8 @@ def main(playwright: Playwright, idURL, URL) -> None:
     ##### GRID CLICKING #####
 
     # Define the number of rows and columns in the grid
-    num_rows = 5
-    num_cols = 5
+    num_rows = 10
+    num_cols = 10
 
     # Find the dimensions of the grid
     grid_width = page.evaluate("() => document.documentElement.scrollWidth")
@@ -197,12 +197,11 @@ def main(playwright: Playwright, idURL, URL) -> None:
 
             # Wait for a short period of time
             page.wait_for_timeout(wait_time)
-            print("BG Pages: {}".format(len(context.background_pages)))
-            print("Done Waiting!")
+            #print("BG Pages: {}".format(len(context.background_pages)))
+            #print("Done Waiting!")
 
-    # Clean up
-    if log: print("Opening test tab")
-    page.evaluate('window.open("https://www.example.com", "_blank")')
+
+
     print("Closing pages....")
     for p in context.background_pages:
         p.close()
@@ -236,6 +235,16 @@ def main(playwright: Playwright, idURL, URL) -> None:
     # Also save to directory!
     with open("{}/requests.json".format(directory), "w+") as requestFile:
         requestFile.write(requests)
+
+    # Page Events
+    pageEvents_json = parseReqFile("server/output/PageEvents.json".format(directory))
+    with open('server/output/PageEvents.json', 'r') as pageEventFile:
+        pageEvents = pageEventFile.read()
+    open('server/output/PageEvents.json', 'w').close()
+
+    # Also save to directory!
+    with open("{}/PageEvents.json".format(directory), "w+") as pageEventFile:
+        pageEventFile.write(pageEvents)
 
     # Collect the Script URLs
     if do_JS:
@@ -279,8 +288,8 @@ with sync_playwright() as playwright:
     #URL_LIST = pd.read_csv("top-1m.csv",names = ["rank", "domain"]).tail(10000)['domain'].values[627:]
 
     #URL_LIST = ["https://www.hindimoviestv.com/"]
-    URL = "https://www.hindimoviestv.com/shehzada-2023/"
-    #URL = "https://hindilinks4u.kim/ant-man-and-the-wasp-quantumania-2023-hindi-dubbed-Watch-online/"
+    #URL = "https://www.hindimoviestv.com/shehzada-2023/"
+    URL = "https://moviehax.me/movies/outer-banks-2023-hindi-dubbed-season-3-complete-netflix-movie-watch-online-hd/"
     main(playwright, 1, URL)
     '''
     visited_sites = []
