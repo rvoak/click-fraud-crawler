@@ -106,10 +106,10 @@ function attachDebugger(tabId) {
       });
     });
 
-    chrome.debugger.sendCommand({tabId: tabId}, 'DOM.enable', {}, function() {
+    chrome.debugger.sendCommand({tabId: tabId}, 'Page.enable', {}, function() {
       // Set up listener for Page.frameAttached event
       chrome.debugger.onEvent.addListener(function(debuggeeId, message, params) {
-        if (debuggeeId.tabId === tabId && message === 'DOM.attributeModified' && params == 'href') {
+        if (debuggeeId.tabId === tabId && message === 'Page.frameNavigated') {
           var simplifiedStackTrace = null;
           if (params.stack) {
             simplifiedStackTrace = params.stack.callFrames.map(function(callFrame) {
@@ -123,6 +123,42 @@ function attachDebugger(tabId) {
             });
           }
           fetch(`http://localhost:${port}/pagewindowopen`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    "type": "Page.frameNavigated",
+                    "http_req": params.url,
+                    "windowName": params.windowName,
+                    "windowDisposition": params.disposition,
+                    "timestamp": new Date().getTime(),
+                    "stackTrace": simplifiedStackTrace
+                  }),
+                  mode: 'cors',
+                  headers: {
+                      'Access-Control-Allow-Origin': '*',
+                      "Content-Type": "application/json"
+                  }
+      });
+        }
+      });
+    });
+
+    chrome.debugger.sendCommand({tabId: tabId}, 'DOM.enable', {}, function() {
+      // Set up listener for Page.frameAttached event
+      chrome.debugger.onEvent.addListener(function(debuggeeId, message, params) {
+        if (debuggeeId.tabId === tabId && message === 'DOM.attributeModified' && params.name == 'href') {
+          var simplifiedStackTrace = null;
+          if (params.stack) {
+            simplifiedStackTrace = params.stack.callFrames.map(function(callFrame) {
+              return {
+                functionName: callFrame.functionName,
+                scriptId: callFrame.scriptId,
+                url: callFrame.url,
+                lineNumber: callFrame.lineNumber,
+                columnNumber: callFrame.columnNumber
+              };
+            });
+          }
+          fetch(`http://localhost:${port}/domevents`, {
                   method: "POST",
                   body: JSON.stringify({
                     "type": "DOM.attributeModified.HREF",
@@ -179,7 +215,6 @@ function attachDebugger(tabId) {
         }
       });
     });
-
 
   });
 }

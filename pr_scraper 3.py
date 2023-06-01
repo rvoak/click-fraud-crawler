@@ -3,21 +3,66 @@ from playwright.sync_api import Playwright, sync_playwright
 from urllib.parse import urlparse
 import os
 import json
+import browsermobproxy as BMP
+from browsermobproxy import Server
 import time
 from bs4 import BeautifulSoup
 import random
 import pandas as pd
-import sys
 
 # Helper function to parse the request and click file
-def parse_request_file(file):
+def parseReqFile(file):
     with open(file,'r') as rFile:
         lines = rFile.readlines()
     k = [json.loads(line) for line in lines]
     return k
 
-def handle_console_message(console_message):
-    print(f'[{console_message.type}] {console_message.text}')
+def intercept_add_event_listener(page):
+    #browser = playwright.chromium.launch()
+    #page = browser.new_page()
+
+    # Define a custom implementation of addEventListener() that logs to the console
+    page.evaluate('''() => {
+        const originalAddEventListener = EventTarget.prototype.addEventListener;
+        EventTarget.prototype.addEventListener = function(type, listener, options) {
+            const scripts = Array.from(document.scripts);
+            const script = scripts.find(script => {
+                const lines = script.innerHTML.split("\\n");
+                return lines.some(line => line.includes("addEventListener"));
+            });
+            const scriptUrl = script ? script.src : "inline script";
+            console.log(`addEventListener called from ${scriptUrl} with type=${type}, listener=${listener}, options=${options}`);
+            return originalAddEventListener.call(this, type, listener, options);
+        };
+        console.log(`Adding addEventListener patch`);
+    }''')
+
+def intercept_window_open(page):
+    #browser = playwright.chromium.launch()
+    #page = browser.new_page()
+
+    # Define a custom implementation of window.open() that logs to the console
+    page.evaluate('''() => {
+        const originalWindowOpen = window.open;
+        window.open = function(url, target, features, replace) {
+            const scripts = Array.from(document.scripts);
+            const script = scripts.find(script => {
+                const lines = script.innerHTML.split("\\n");
+                return lines.some(line => line.includes("window.open"));
+            });
+            const scriptUrl = script ? script.src : "inline script";
+            console.log(`window.open() called from ${scriptUrl} with url=${url}, target=${target}, features=${features}, replace=${replace}`);
+            return originalWindowOpen.call(this, url, target, features, replace);
+        };
+        console.log(`Adding window.open() patch`);
+    }''')
+
+def console_msg(msg):
+    if "addEventListener" in msg.text or "window.open" in msg.text:
+        print("CONSOLE: {}".format(msg.text))
+
+def handle_new_tab(new_page):
+    print("New Tab Opened")
 
 def choose_random_webpage(homepage):
     response = req2.get(homepage)
@@ -33,6 +78,7 @@ def choose_random_webpage(homepage):
     domain_name = urlparse(homepage).netloc
     subpages = [link['href'] for link in links if urlparse(link['href']).netloc == domain_name]
 
+    #print(subpages)
     subpages_long = []
     for subpage in subpages:
         path = subpage.split(domain_name)[1]
@@ -44,41 +90,6 @@ def choose_random_webpage(homepage):
     else:
         return random.choice(subpages)
 
-def capture_dom_snapshot(cdp_session):
-    # Enable the DOMSnapshot domain
-    cdp_session.send('DOMSnapshot.enable')
-
-    # Capture the DOM snapshot
-    result = cdp_session.send('DOMSnapshot.captureSnapshot', {
-        'includePaintOrder': True,
-        'computedStyles': []
-    })
-
-    return result
-
-def get_node_id_to_name_mapping(cdp_session):
-    cdp_session.send('DOM.enable')
-    document_response = cdp_session.send('DOM.getDocument')
-
-    root_node = document_response['root']
-    node_id_to_name_mapping = {}
-
-    def process_node(node):
-        node_id_to_name_mapping[node['nodeId']] = node['nodeName']
-
-        if 'children' in node:
-            for child_node in node['children']:
-                process_node(child_node)
-
-    process_node(root_node)
-
-    return node_id_to_name_mapping
-
-def save_snapshot_to_file(snapshot_data, file_path):
-    with open(file_path, 'w') as file:
-        json.dump(snapshot_data, file)
-
-
 def main(playwright: Playwright, idURL, URL) -> None:
 
     # Setup
@@ -87,10 +98,9 @@ def main(playwright: Playwright, idURL, URL) -> None:
     #context_dir = "{}/contexts".format(directory)
     log = True
     do_JS = True
-    do_Headless = False
+    do_BMP = False
+    do_Shadow = False
     wait_time = 1000
-
-    stopHere = True
 
 
     # Create storage directories
@@ -104,38 +114,36 @@ def main(playwright: Playwright, idURL, URL) -> None:
     if not os.path.exists(context_dir):
         os.mkdir(context_dir)
 
-    # Set up the browser context
-    if do_Headless:
-        context = playwright.chromium.launch_persistent_context(
-            headless=True,
-            user_data_dir = context_dir,
-            devtools = True,
-            record_har_path = "{}/pw_harfile.har".format(directory),
-            args=[
-                    "--headless=new",
-                    "--disable-extensions-except={}".format(ext_file),
-                    "--load-extension={}".format(ext_file),
-                    "--ignore-ssl-errors=yes",
-                    "--ignore-certificate-errors",
-                 ],
-        )
-    else:
-        context = playwright.chromium.launch_persistent_context(
-            headless=False,
-            user_data_dir = context_dir,
-            devtools = True,
-            record_har_path = "{}/pw_harfile.har".format(directory),
-            args=[
-                    "--disable-extensions-except={}".format(ext_file),
-                    "--load-extension={}".format(ext_file),
-                    "--ignore-ssl-errors=yes",
-                    "--ignore-certificate-errors",
-                 ],
-        )
 
+    # Start Server
+    if do_BMP:
+        server = Server("/Users/rajvardhan/Desktop/browsermob-proxy-2.1.4/bin/browsermob-proxy")
+        server.start()
+        proxy = server.create_proxy()
+        proxy.new_har("newhar")
+        ###
+
+
+    # Set up the browser context
+    context = playwright.chromium.launch_persistent_context(
+        headless=False,
+        user_data_dir = context_dir,
+        devtools = True,
+        record_har_path = "{}/pw_harfile.har".format(directory),
+        args=[
+                #"--headless=new",
+                "--disable-extensions-except={}".format(ext_file),
+                "--load-extension={}".format(ext_file),
+                "--ignore-ssl-errors=yes",
+                "--ignore-certificate-errors",
+             ],
+    )
 
     # Navigate to the webpage
     page = context.new_page()
+    page.on("console", lambda msg: console_msg(msg))
+    #intercept_add_event_listener(page)
+    #intercept_window_open(page)
     page.goto(URL)
     if log: print("Waiting for Page Load")
 
@@ -144,25 +152,23 @@ def main(playwright: Playwright, idURL, URL) -> None:
     with open("{}/dom.html".format(directory), "w+", encoding = "utf-8") as domFile:
         domFile.write(all_dom)
 
-    page.evaluate('window.open("https://example.com", "_blank")')
-    page.wait_for_timeout(1000)
-    if stopHere:
-        sys.exit()
-
-    cdp_session = context.new_cdp_session(page)
-    snapshot = capture_dom_snapshot(cdp_session)
-    save_snapshot_to_file(snapshot, '{}/dom_snapshot.json'.format(directory))
-    node_map = get_node_id_to_name_mapping(cdp_session)
-    save_snapshot_to_file(node_map, '{}/node_map.json'.format(directory))
-
-    print("DOM Saved")
+    # Shadow DOM Download
+    if do_Shadow:
+        try:
+            shadow_root_selector = find_shadow_root_selector(page)
+            if shadow_root_selector:
+                shadow_root = page.evaluate_handle(f'document.querySelector("{shadow_root_selector}").shadowRoot')
+                shadow_content = shadow_root.evaluate('document.body.innerHTML')
+                with open("{}/shadow_dom.html".format(directory), "w+", encoding = "utf-8") as shadowDOMFile:
+                    shadowDOMFile.write(shadow_content)
+        except:
+            print("Shadow DOM Error")
 
     ##### GRID CLICKING #####
 
     # Define the number of rows and columns in the grid
     num_rows = 5
     num_cols = 5
-
 
     # Find the dimensions of the grid
     grid_width = page.evaluate("() => document.documentElement.scrollWidth")
@@ -172,6 +178,8 @@ def main(playwright: Playwright, idURL, URL) -> None:
     cell_width = grid_width // num_cols
     cell_height = grid_height // num_rows
 
+    #if log: print("Opening test tab")
+    #page.evaluate('window.open("https://www.example.com", "_blank")')
     # Loop through each cell in the grid
     if log: print("Start Clicking!")
     for row in range(num_rows):
@@ -187,9 +195,14 @@ def main(playwright: Playwright, idURL, URL) -> None:
             if log:
                 print("[--{}--] Clicked {}, {}".format(idURL, x, y))
 
+            # Wait for a short period of time
             page.wait_for_timeout(wait_time)
+            print("BG Pages: {}".format(len(context.background_pages)))
+            print("Done Waiting!")
 
-
+    # Clean up
+    if log: print("Opening test tab")
+    page.evaluate('window.open("https://www.example.com", "_blank")')
     print("Closing pages....")
     for p in context.background_pages:
         p.close()
@@ -198,35 +211,35 @@ def main(playwright: Playwright, idURL, URL) -> None:
     context.close()
     print("Closed context.....")
 
+    if do_BMP:
+        har = proxy.har
+        with open("{}/harfile.har".format(directory), "w+") as f:
+            f.write(json.dumps(har))
+        #proxy.stop()
+        server.stop()
+
     # Read the clicks file and clear it
     with open('server/output/click.json', 'r') as clickFile:
         clicks = clickFile.read()
     open('server/output/click.json', 'w').close()
+
     # Save it for persistent storage
     with open("{}/clicks.json".format(directory), "w+") as clickFile:
         clickFile.write(clicks)
 
     # Do the same with requests
-    requests_json = parse_request_file("server/output/request.json")
+    requests_json = parseReqFile("server/output/request.json".format(directory))
     with open('server/output/request.json', 'r') as requestFile:
         requests = requestFile.read()
     open('server/output/request.json', 'w').close()
+
     # Also save to directory!
     with open("{}/requests.json".format(directory), "w+") as requestFile:
         requestFile.write(requests)
 
-    # Page Events
-    with open('server/output/PageEvents.json', 'r') as pageEventFile:
-        pageEvents = pageEventFile.read()
-    open('server/output/PageEvents.json', 'w').close()
-    # Also save to directory!
-    with open("{}/PageEvents.json".format(directory), "w+") as pageEventFile:
-        pageEventFile.write(pageEvents)
-
     # Collect the Script URLs
     if do_JS:
         scripts = []
-        script_map = {}
         for id_req, req in enumerate(requests_json):
             stack = req['call_stack']
             if 'stack' in stack.keys():
@@ -238,24 +251,15 @@ def main(playwright: Playwright, idURL, URL) -> None:
         # For each 3P script, request the JS and save it
         for idscript, script in enumerate(list(set(scripts))):
             if 'chrome-extension' not in script:
-                try:
-                    code_ = req2.get(script)
-                    code = code_.content
-                    script_name = script.replace('/','_')
-                    if len(script_name) > 100:
-                        script_name = "long_name_script_{}".format(idscript)
-                        script_name[script_name] = script
-                    if '.js' not in script_name:
-                        script_name = script_name + '.js'
-                    with open("{}/scripts/{}".format(directory, script_name), 'w+') as script_file:
-                        script_file.write(str(code))
-                except:
-                    print("Error getting JS")
-
-        # Save the script map file
-        with open("{}/scripts/script_name_map.json".format(directory), "w+") as scriptMapFile:
-            json.dump(script_map, scriptMapFile)
-
+                code_ = req2.get(script)
+                code = code_.content
+                script_name = script.replace('/','_')
+                if len(script_name) > 100:
+                    script_name = "long_name_script_{}".format(idscript)
+                if '.js' not in script_name:
+                    script_name = script_name + '.js'
+                with open("{}/scripts/{}".format(directory, script_name), 'w+') as script_file:
+                    script_file.write(str(code))
 
 
 # Execute
@@ -272,10 +276,12 @@ with sync_playwright() as playwright:
                 "https://fmoviesf.co/movie/bel-air-season-2-2022-052664/"
                 ]
 
-    #URL = "https://moviehax.me/movies/outer-banks-2023-hindi-dubbed-season-3-complete-netflix-movie-watch-online-hd/"
-    URL = "https://www.google.com"
-    main(playwright, 1, URL)
+    #URL_LIST = pd.read_csv("top-1m.csv",names = ["rank", "domain"]).tail(10000)['domain'].values[627:]
 
+    #URL_LIST = ["https://www.hindimoviestv.com/"]
+    URL = "https://www.hindimoviestv.com/shehzada-2023/"
+    #URL = "https://hindilinks4u.kim/ant-man-and-the-wasp-quantumania-2023-hindi-dubbed-Watch-online/"
+    main(playwright, 1, URL)
     '''
     visited_sites = []
     for idURL, URL in enumerate(URL_LIST):
@@ -295,8 +301,7 @@ with sync_playwright() as playwright:
             print("Error in {}".format(URL))
             print(e)
             continue
-
+    '''
 
     with open("crawl/v3/visited_sites.txt", "w+") as visitedFile:
         visitedFile.writelines(visited_sites)
-    '''
